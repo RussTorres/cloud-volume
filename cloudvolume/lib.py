@@ -5,7 +5,7 @@ from collections import namedtuple
 import json
 import os
 import io
-import re 
+import re
 import sys
 import math
 import shutil
@@ -52,13 +52,13 @@ def colorize(color, text):
   color = color.upper()
   return COLORS[color] + text + COLORS['RESET']
 
-ExtractedPath = namedtuple('ExtractedPath', 
+ExtractedPath = namedtuple('ExtractedPath',
   ('protocol', 'intermediate_path', 'bucket', 'dataset','layer')
 )
 
 def extract_path(cloudpath):
   """cloudpath: e.g. gs://neuroglancer/DATASET/LAYER/info or s3://..."""
-  protocol_re = r'^(gs|file|s3|boss|matrix|https?)://'
+  protocol_re = r'^(gs|file|s3|boss|matrix|wasabis3|https?)://'
   bucket_re = r'^(/?[~\d\w_\.\-]+)/'
   tail_re = r'([\d\w_\.\-]+)/([\d\w_\.\-]+)/?$'
 
@@ -138,9 +138,9 @@ def find_closest_divisor(to_divide, closest_to):
   This is used to find the right chunk size for
   importing a neuroglancer dataset that has a
   chunk import size that's not evenly divisible by
-  64,64,64. 
+  64,64,64.
 
-  e.g. 
+  e.g.
     neuroglancer_chunk_size = find_closest_divisor(build_chunk_size, closest_to=[64,64,64])
 
   Required:
@@ -152,13 +152,13 @@ def find_closest_divisor(to_divide, closest_to):
   def find_closest(td, ct):
     min_distance = td
     best = td
-    
+
     for divisor in divisors(td):
       if abs(divisor - ct) < min_distance:
         min_distance = abs(divisor - ct)
         best = divisor
     return best
-  
+
   return [ find_closest(td, ct) for td, ct in zip(to_divide, closest_to) ]
 
 def divisors(n):
@@ -179,7 +179,7 @@ def xyzrange(start_vec, end_vec=None, stride_vec=(1,1,1)):
 
   rangeargs = ( (start, end, stride) for start, end, stride in zip(start_vec, end_vec, stride_vec) )
   xyzranges = [ range(*arg) for arg in rangeargs ]
-  
+
   # iterate then x first, then y, then z
   # this way you process in the xy plane slice by slice
   # but you don't create process lots of prefix-adjacent keys
@@ -302,12 +302,12 @@ class Bbox(object):
   @classmethod
   def intersects(cls, bbx1, bbx2):
     return (
-          bbx1.minpt.x < bbx2.maxpt.x 
-      and bbx1.maxpt.x > bbx2.minpt.x 
+          bbx1.minpt.x < bbx2.maxpt.x
+      and bbx1.maxpt.x > bbx2.minpt.x
       and bbx1.minpt.y < bbx2.maxpt.y
       and bbx1.maxpt.y > bbx2.minpt.y
       and bbx1.minpt.z < bbx2.maxpt.z
-      and bbx1.maxpt.z > bbx2.minpt.z 
+      and bbx1.maxpt.z > bbx2.minpt.z
     )
 
   @classmethod
@@ -341,8 +341,8 @@ class Bbox(object):
   @classmethod
   def from_slices(cls, slices3):
     return Bbox(
-      (slices3[0].start, slices3[1].start, slices3[2].start), 
-      (slices3[0].stop, slices3[1].stop, slices3[2].stop) 
+      (slices3[0].start, slices3[1].start, slices3[2].start),
+      (slices3[0].stop, slices3[1].stop, slices3[2].stop)
     )
 
   @classmethod
@@ -352,7 +352,7 @@ class Bbox(object):
   @property
   def dtype(self):
     return self.minpt.dtype
-  
+
   def to_filename(self):
     return '{}-{}_{}-{}_{}-{}'.format(
       self.minpt.x, self.maxpt.x,
@@ -416,7 +416,7 @@ class Bbox(object):
     to the nearest grid lines.
 
     Required:
-      chunk_size: arraylike (x,y,z), the size of chunks in the 
+      chunk_size: arraylike (x,y,z), the size of chunks in the
                     dataset e.g. (64,64,64)
     Optional:
       offset: arraylike (x,y,z), the starting coordinate of the dataset
@@ -425,7 +425,7 @@ class Bbox(object):
     result = self.clone()
     result = result - offset
     result.minpt = np.floor(result.minpt / chunk_size) * chunk_size
-    result.maxpt = np.ceil(result.maxpt / chunk_size) * chunk_size 
+    result.maxpt = np.ceil(result.maxpt / chunk_size) * chunk_size
     return result + offset
 
   def shrink_to_chunk_size(self, chunk_size, offset=Vec(0,0,0, dtype=int)):
@@ -434,7 +434,7 @@ class Bbox(object):
     to the nearest grid lines.
 
     Required:
-      chunk_size: arraylike (x,y,z), the size of chunks in the 
+      chunk_size: arraylike (x,y,z), the size of chunks in the
                     dataset e.g. (64,64,64)
     Optional:
       offset: arraylike (x,y,z), the starting coordinate of the dataset
@@ -443,7 +443,7 @@ class Bbox(object):
     result = self.clone()
     result = result - offset
     result.minpt = np.ceil(result.minpt / chunk_size) * chunk_size
-    result.maxpt = np.floor(result.maxpt / chunk_size) * chunk_size 
+    result.maxpt = np.floor(result.maxpt / chunk_size) * chunk_size
 
     # If we are inside a single chunk, the ends
     # can invert, which tells us we should collapse
@@ -459,7 +459,7 @@ class Bbox(object):
     to the nearest grid lines.
 
     Required:
-      chunk_size: arraylike (x,y,z), the size of chunks in the 
+      chunk_size: arraylike (x,y,z), the size of chunks in the
                     dataset e.g. (64,64,64)
     Optional:
       offset: arraylike (x,y,z), the starting coordinate of the dataset
@@ -473,10 +473,10 @@ class Bbox(object):
 
   def contains(self, point):
     return (
-          point[0] >= self.minpt[0] 
+          point[0] >= self.minpt[0]
       and point[1] >= self.minpt[1]
-      and point[2] >= self.minpt[2] 
-      and point[0] <= self.maxpt[0] 
+      and point[2] >= self.minpt[2]
+      and point[0] <= self.maxpt[0]
       and point[1] <= self.maxpt[1]
       and point[2] <= self.maxpt[2]
     )
@@ -500,11 +500,11 @@ class Bbox(object):
   def transpose(self):
     return Bbox(self.minpt[::-1], self.maxpt[::-1])
 
-  # note that operand can be a vector 
+  # note that operand can be a vector
   # or a scalar thanks to numpy
-  def __sub__(self, operand): 
+  def __sub__(self, operand):
     tmp = self.clone()
-    
+
     if isinstance(operand, Bbox):
       tmp.minpt -= operand.minpt
       tmp.maxpt -= operand.maxpt
@@ -584,14 +584,14 @@ def generate_slices(slices, minsize, maxsize, bounded=True):
   while len(slices) < len(maxsize):
     slices.append( slice(None, None, None) )
 
-  # First three slices are x,y,z, last is channel. 
+  # First three slices are x,y,z, last is channel.
   # Handle only x,y,z here, channel seperately
   for index, slc in enumerate(slices):
     if isinstance(slc, integer_types) or isinstance(slc, float):
       slices[index] = slice(int(slc), int(slc)+1, 1)
     else:
       start = minsize[index] if slc.start is None else slc.start
-      end = maxsize[index] if slc.stop is None else slc.stop 
+      end = maxsize[index] if slc.stop is None else slc.stop
       step = 1 if slc.step is None else slc.step
 
       if step < 0:
@@ -603,7 +603,7 @@ def generate_slices(slices, minsize, maxsize, bounded=True):
       # marching cubes.
       if bounded:
         # if start < 0: # this is support for negative indicies
-          # start = maxsize[index] + start         
+          # start = maxsize[index] + start
         check_bounds(start, minsize[index], maxsize[index])
         # if end < 0: # this is support for negative indicies
         #   end = maxsize[index] + end
@@ -626,7 +626,7 @@ def save_images(image, axis='z', channel=None, directory=None, global_norm=True,
   """
   if directory is None:
     directory = os.path.join('./saved_images', 'default', 'default', '0', Bbox( (0,0,0), image.shape[:3] ).to_filename())
-  
+
   mkdir(directory)
 
   print("Saving to {}".format(directory))
@@ -653,7 +653,7 @@ def save_images(image, axis='z', channel=None, directory=None, global_norm=True,
     return img.astype(np.uint8)
 
   if global_norm and image.dtype in (np.float32, np.float64):
-    image = normalize_float(image)      
+    image = normalize_float(image)
 
   for level in tqdm(range(image.shape[index]), desc="Saving Images"):
     if index == 0:
@@ -677,7 +677,7 @@ def save_images(image, axis='z', channel=None, directory=None, global_norm=True,
       # it requires a 90deg counterclockwise rotation on xy plane (leaving z alone)
       # followed by a flip on Y
       if axis == 'z':
-        img2d = np.flipud(np.rot90(img2d, 1)) 
+        img2d = np.flipud(np.rot90(img2d, 1))
 
       if img2d.dtype == np.uint8:
         img2d = Image.fromarray(img2d, 'L')

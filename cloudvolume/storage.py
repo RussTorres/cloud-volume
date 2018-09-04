@@ -40,8 +40,8 @@ def reset_connection_pools():
 reset_connection_pools()
 
 retry = tenacity.retry(
-  reraise=True, 
-  stop=tenacity.stop_after_attempt(7), 
+  reraise=True,
+  stop=tenacity.stop_after_attempt(7),
   wait=tenacity.wait_full_jitter(0.5, 60.0),
 )
 
@@ -52,7 +52,7 @@ class UnsupportedProtocol(Exception):
 
 class SimpleStorage(object):
   """
-  Access files stored in Google Storage (gs), Amazon S3 (s3), 
+  Access files stored in Google Storage (gs), Amazon S3 (s3),
   or the local Filesystem (file).
 
   e.g. with Storage('gs://bucket/dataset/layer') as stor:
@@ -65,7 +65,7 @@ class SimpleStorage(object):
   Optional:
     n_threads (int:20): number of threads to use downloading and uplaoding.
       If 0, execution will be on the main python thread.
-    progress (bool:false): Show a tqdm progress bar for multiple 
+    progress (bool:false): Show a tqdm progress bar for multiple
       uploads and downloads.
   """
   def __init__(self, layer_path, progress=False):
@@ -74,12 +74,12 @@ class SimpleStorage(object):
 
     self._layer_path = layer_path
     self._path = extract_path(layer_path)
-    
+
     if self._path.protocol == 'file':
       self._interface_cls = FileInterface
     elif self._path.protocol == 'gs':
       self._interface_cls = GoogleCloudStorageInterface
-    elif self._path.protocol in ('s3', 'matrix'):
+    elif self._path.protocol in ('s3', 'matrix', 'wasabis3'):
       self._interface_cls = S3Interface
     elif self._path.protocol in ('http', 'https'):
       self._interface_cls = HttpInterface
@@ -99,17 +99,17 @@ class SimpleStorage(object):
     if type(content) != str:
       content = json.dumps(content)
     return self.put_file(file_path, content, content_type=content_type, *args, **kwargs)
-    
+
   def put_file(self, file_path, content, content_type=None, compress=None, cache_control=None):
-    """ 
+    """
     Args:
       filename (string): it can contains folders
       content (string): binary data to save
     """
-    return self.put_files([ (file_path, content) ], 
-      content_type=content_type, 
-      compress=compress, 
-      cache_control=cache_control, 
+    return self.put_files([ (file_path, content) ],
+      content_type=content_type,
+      compress=compress,
+      cache_control=cache_control,
       block=False
     )
 
@@ -132,7 +132,7 @@ class SimpleStorage(object):
 
   def files_exist(self, file_paths):
     """
-    Threaded exists for all file paths. 
+    Threaded exists for all file paths.
 
     file_paths: (list) file paths to test for existence
 
@@ -164,10 +164,10 @@ class SimpleStorage(object):
 
   def list_files(self, prefix="", flat=False):
     """
-    List the files in the layer with the given prefix. 
+    List the files in the layer with the given prefix.
 
     flat means only generate one level of a directory,
-    while non-flat means generate all file paths with that 
+    while non-flat means generate all file paths with that
     prefix.
 
     Here's how flat=True handles different senarios:
@@ -179,7 +179,7 @@ class SimpleStorage(object):
         - Lists the 'bigarray' directory
       4. partial file name prefix = 'bigarray/chunk_'
         - Lists the 'bigarray/' directory and filters on 'chunk_'
-    
+
     Return: generated sequence of file paths relative to layer_path
     """
 
@@ -197,7 +197,7 @@ class SimpleStorage(object):
 
 class Storage(ThreadedQueue):
   """
-  Access files stored in Google Storage (gs), Amazon S3 (s3), 
+  Access files stored in Google Storage (gs), Amazon S3 (s3),
   or the local Filesystem (file).
 
   e.g. with Storage('gs://bucket/dataset/layer') as stor:
@@ -210,7 +210,7 @@ class Storage(ThreadedQueue):
   Optional:
     n_threads (int:20): number of threads to use downloading and uplaoding.
       If 0, execution will be on the main python thread.
-    progress (bool:false): Show a tqdm progress bar for multiple 
+    progress (bool:false): Show a tqdm progress bar for multiple
       uploads and downloads.
   """
   def __init__(self, layer_path, n_threads=20, progress=False):
@@ -219,12 +219,12 @@ class Storage(ThreadedQueue):
 
     self._layer_path = layer_path
     self._path = extract_path(layer_path)
-    
+
     if self._path.protocol == 'file':
       self._interface_cls = FileInterface
     elif self._path.protocol == 'gs':
       self._interface_cls = GoogleCloudStorageInterface
-    elif self._path.protocol in ('s3', 'matrix'):
+    elif self._path.protocol in ('s3', 'matrix', 'wasabis3'):
       self._interface_cls = S3Interface
     elif self._path.protocol in ('http', 'https'):
       self._interface_cls = HttpInterface
@@ -256,17 +256,17 @@ class Storage(ThreadedQueue):
     if type(content) != str:
       content = json.dumps(content)
     return self.put_file(file_path, content, content_type=content_type, *args, **kwargs)
-  
+
   def put_file(self, file_path, content, content_type=None, compress=None, cache_control=None):
-    """ 
+    """
     Args:
       filename (string): it can contains folders
       content (string): binary data to save
     """
-    return self.put_files([ (file_path, content) ], 
-      content_type=content_type, 
-      compress=compress, 
-      cache_control=cache_control, 
+    return self.put_files([ (file_path, content) ],
+      content_type=content_type,
+      compress=compress,
+      cache_control=cache_control,
       block=False
     )
 
@@ -302,7 +302,7 @@ class Storage(ThreadedQueue):
 
   def files_exist(self, file_paths):
     """
-    Threaded exists for all file paths. 
+    Threaded exists for all file paths.
 
     file_paths: (list) file paths to test for existence
 
@@ -343,16 +343,16 @@ class Storage(ThreadedQueue):
     results = []
 
     def get_file_thunk(path, interface):
-      result = error = None 
+      result = error = None
 
       try:
         result = interface.get_file(path)
       except Exception as err:
         error = err
-        # important to print immediately because 
+        # important to print immediately because
         # errors are collected at the end
-        print(err) 
-      
+        print(err)
+
       content, encoding = result
       content = compression.decompress(content, encoding)
 
@@ -403,10 +403,10 @@ class Storage(ThreadedQueue):
 
   def list_files(self, prefix="", flat=False):
     """
-    List the files in the layer with the given prefix. 
+    List the files in the layer with the given prefix.
 
     flat means only generate one level of a directory,
-    while non-flat means generate all file paths with that 
+    while non-flat means generate all file paths with that
     prefix.
 
     Here's how flat=True handles different senarios:
@@ -418,7 +418,7 @@ class Storage(ThreadedQueue):
         - Lists the 'bigarray' directory
       4. partial file name prefix = 'bigarray/chunk_'
         - Lists the 'bigarray/' directory and filters on 'chunk_'
-    
+
     Return: generated sequence of file paths relative to layer_path
     """
 
@@ -438,10 +438,10 @@ class FileInterface(object):
     self._path = path
 
   def get_path_to_file(self, file_path):
-    
+
     clean = filter(None,[
-      self._path.bucket, 
-      self._path.intermediate_path,                             
+      self._path.bucket,
+      self._path.intermediate_path,
       self._path.dataset,
       self._path.layer,
       file_path
@@ -474,12 +474,12 @@ class FileInterface(object):
     path = self.get_path_to_file(file_path)
 
     compressed = os.path.exists(path + '.gz')
-      
+
     if compressed:
       path += '.gz'
 
     encoding = 'gzip' if compressed else None
-    
+
     try:
       with open(path, 'rb') as f:
         data = f.read()
@@ -500,14 +500,14 @@ class FileInterface(object):
 
   def list_files(self, prefix, flat):
     """
-    List the files in the layer with the given prefix. 
+    List the files in the layer with the given prefix.
 
     flat means only generate one level of a directory,
-    while non-flat means generate all file paths with that 
+    while non-flat means generate all file paths with that
     prefix.
     """
 
-    layer_path = self.get_path_to_file("")        
+    layer_path = self.get_path_to_file("")
     path = os.path.join(layer_path, prefix) + '*'
 
     filenames = []
@@ -525,10 +525,10 @@ class FileInterface(object):
         files = [ os.path.join(root, f) for f in files ]
         files = [ f.replace(remove, '') for f in files ]
         files = [ f for f in files if f[:len(prefix)] == prefix ]
-        
+
         for filename in files:
           filenames.append(filename)
-    
+
     def stripgz(fname):
       (base, ext) = os.path.splitext(fname)
       if ext == '.gz':
@@ -586,7 +586,7 @@ class GoogleCloudStorageInterface(object):
   @retry
   def delete_file(self, file_path):
     key = self.get_path_to_file(file_path)
-    
+
     try:
       self._bucket.delete_blob( key )
     except google.cloud.exceptions.NotFound:
@@ -594,13 +594,13 @@ class GoogleCloudStorageInterface(object):
 
   def list_files(self, prefix, flat=False):
     """
-    List the files in the layer with the given prefix. 
+    List the files in the layer with the given prefix.
 
     flat means only generate one level of a directory,
-    while non-flat means generate all file paths with that 
+    while non-flat means generate all file paths with that
     prefix.
     """
-    layer_path = self.get_path_to_file("")        
+    layer_path = self.get_path_to_file("")
     path = os.path.join(layer_path, prefix)
     for blob in self._bucket.list_blobs(prefix=path):
       filename = blob.name.replace(layer_path + '/', '')
@@ -703,7 +703,7 @@ class S3Interface(object):
         encoding = resp['ContentEncoding']
 
       return resp['Body'].read(), encoding
-    except botocore.exceptions.ClientError as err: 
+    except botocore.exceptions.ClientError as err:
       if err.response['Error']['Code'] == 'NoSuchKey':
         return None, None
       else:
@@ -721,7 +721,7 @@ class S3Interface(object):
         exists = False
       else:
         raise
-    
+
     return exists
 
   @retry
@@ -733,14 +733,14 @@ class S3Interface(object):
 
   def list_files(self, prefix, flat=False):
     """
-    List the files in the layer with the given prefix. 
+    List the files in the layer with the given prefix.
 
     flat means only generate one level of a directory,
-    while non-flat means generate all file paths with that 
+    while non-flat means generate all file paths with that
     prefix.
     """
 
-    layer_path = self.get_path_to_file("")        
+    layer_path = self.get_path_to_file("")
     path = os.path.join(layer_path, prefix)
 
     resp = self._conn.list_objects_v2(
@@ -782,7 +782,7 @@ def _radix_sort(L, i=0):
   """
   Most significant char radix sort
   """
-  if len(L) <= 1: 
+  if len(L) <= 1:
     return L
   done_bucket = []
   buckets = [ [] for x in range(255) ]
