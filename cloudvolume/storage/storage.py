@@ -18,7 +18,7 @@ from cloudvolume.scheduler import schedule_green_jobs
 import cloudvolume.paths
 
 from .storage_interfaces import (
-  FileInterface, HttpInterface, 
+  FileInterface, HttpInterface,
   S3Interface, GoogleCloudStorageInterface
 )
 
@@ -27,7 +27,7 @@ def get_interface_class(protocol):
     return FileInterface
   elif protocol == 'gs':
     return GoogleCloudStorageInterface
-  elif protocol in ('s3', 'matrix'):
+  elif protocol in ('s3', 'matrix', 'aicephs3'):
     return S3Interface
   elif protocol in ('http', 'https'):
     return HttpInterface
@@ -42,7 +42,7 @@ class StorageBase(object):
     self._layer_path = layer_path
     self._path = cloudvolume.paths.extract(layer_path)
     self._interface_cls = get_interface_class(self._path.protocol)
-  
+
   @property
   def layer_path(self):
     return self._layer_path
@@ -57,7 +57,7 @@ class StorageBase(object):
     if type(content) != str:
       content = jsonify(content)
     return self.put_file(file_path, content, content_type=content_type, *args, **kwargs)
-    
+
   def get_json(self, file_path):
     content = self.get_file(file_path)
     if content is None:
@@ -65,16 +65,16 @@ class StorageBase(object):
     return json.loads(content.decode('utf8'))
 
   def put_file(self, file_path, content, content_type=None, compress=None, compress_level=None, cache_control=None):
-    """ 
+    """
     Args:
       filename (string): it can contains folders
       content (string): binary data to save
     """
-    return self.put_files([ (file_path, content) ], 
-      content_type=content_type, 
-      compress=compress, 
+    return self.put_files([ (file_path, content) ],
+      content_type=content_type,
+      compress=compress,
       compress_level=compress_level,
-      cache_control=cache_control, 
+      cache_control=cache_control,
       block=False
     )
 
@@ -110,7 +110,7 @@ class StorageBase(object):
 
 class SimpleStorage(StorageBase):
   """
-  Access files stored in Google Storage (gs), Amazon S3 (s3), 
+  Access files stored in Google Storage (gs), Amazon S3 (s3),
   or the local Filesystem (file).
 
   e.g. with Storage('gs://bucket/dataset/layer') as stor:
@@ -121,7 +121,7 @@ class SimpleStorage(StorageBase):
       Accepts s3:// gs:// and file://. File paths are absolute.
 
   Optional:
-    progress (bool:false): Show a tqdm progress bar for multiple 
+    progress (bool:false): Show a tqdm progress bar for multiple
       uploads and downloads.
   """
   def __init__(self, layer_path, progress=False):
@@ -147,7 +147,7 @@ class SimpleStorage(StorageBase):
 
   def files_exist(self, file_paths):
     """
-    Threaded exists for all file paths. 
+    Threaded exists for all file paths.
 
     file_paths: (list) file paths to test for existence
 
@@ -167,13 +167,13 @@ class SimpleStorage(StorageBase):
   def get_files(self, file_paths):
     results = []
     for path in tqdm(file_paths, disable=(not self.progress), desc="Downloading"):
-      error = None 
+      error = None
 
       try:
         content = self.get_file(path)
       except Exception as err:
-        error = err 
-        content = None 
+        error = err
+        content = None
 
       results.append({
         'filename': path,
@@ -181,7 +181,7 @@ class SimpleStorage(StorageBase):
         'error': error,
       })
 
-    return results 
+    return results
 
   def delete_file(self, file_path):
     self._interface.delete_file(file_path)
@@ -193,10 +193,10 @@ class SimpleStorage(StorageBase):
 
   def list_files(self, prefix="", flat=False):
     """
-    List the files in the layer with the given prefix. 
+    List the files in the layer with the given prefix.
 
     flat means only generate one level of a directory,
-    while non-flat means generate all file paths with that 
+    while non-flat means generate all file paths with that
     prefix.
 
     Here's how flat=True handles different senarios:
@@ -208,7 +208,7 @@ class SimpleStorage(StorageBase):
         - Lists the 'bigarray' directory
       4. partial file name prefix = 'bigarray/chunk_'
         - Lists the 'bigarray/' directory and filters on 'chunk_'
-    
+
     Return: generated sequence of file paths relative to layer_path
     """
 
@@ -226,7 +226,7 @@ class SimpleStorage(StorageBase):
 
   def __getitem__(self, key):
     return self.get_file(key)
-  
+
   def __setitem__(self, key, value):
     if type(key) == tuple:
       key, kwargs = key
@@ -237,8 +237,8 @@ class SimpleStorage(StorageBase):
 
 class GreenStorage(StorageBase):
   def __init__(
-    self, layer_path, progress=False, 
-    n_threads=DEFAULT_THREADS, 
+    self, layer_path, progress=False,
+    n_threads=DEFAULT_THREADS,
   ):
     import gevent.pool
     super(GreenStorage, self).__init__(layer_path, progress)
@@ -263,8 +263,8 @@ class GreenStorage(StorageBase):
     def exist_thunk(paths):
       with self.get_connection() as conn:
         results.update(conn.files_exist(paths))
-    
-    schedule_green_jobs(  
+
+    schedule_green_jobs(
       fns=( partial(exist_thunk, paths) for paths in scatter(file_paths, self.concurrency) ),
       progress=('Existence Testing' if self.progress else None),
       concurrency=self.concurrency,
@@ -284,26 +284,26 @@ class GreenStorage(StorageBase):
 
   def get_files(self, file_paths):
     """
-    Returns: [ 
-      { "filename": ..., "content": bytes, "error": exception or None }, 
-      ... 
+    Returns: [
+      { "filename": ..., "content": bytes, "error": exception or None },
+      ...
     ]
     """
     def getfn(path):
-      result = error = None 
+      result = error = None
 
       conn = self.get_connection()
       try:
         result = conn.get_file(path)
       except Exception as err:
         error = err
-        # important to print immediately because 
+        # important to print immediately because
         # errors are collected at the end
         print(err)
         del conn
       else:
         conn.release_connection()
-      
+
       content, encoding = result
       content = compression.decompress(content, encoding)
 
@@ -313,7 +313,7 @@ class GreenStorage(StorageBase):
         "error": error,
       }
 
-    return schedule_green_jobs(  
+    return schedule_green_jobs(
       fns=( partial(getfn, path) for path in file_paths ),
       progress=('Downloading' if self.progress else None),
       concurrency=self.concurrency,
@@ -321,7 +321,7 @@ class GreenStorage(StorageBase):
     )
 
   def put_files(
-    self, files, 
+    self, files,
     content_type=None, compress=None, compress_level=None,
     cache_control=None, block=True
   ):
@@ -331,7 +331,7 @@ class GreenStorage(StorageBase):
 
     Required:
       files: [ (filepath, content), .... ]
-    """ 
+    """
     if compress not in compression.COMPRESSION_TYPES:
       raise NotImplementedError()
 
@@ -339,10 +339,10 @@ class GreenStorage(StorageBase):
       with self.get_connection() as conn:
         content = compression.compress(content, method=compress, compress_level=compress_level)
         conn.put_file(
-          file_path=path, 
-          content=content, 
-          content_type=content_type, 
-          compress=compress, 
+          file_path=path,
+          content=content,
+          content_type=content_type,
+          compress=compress,
           cache_control=cache_control,
         )
 
@@ -388,15 +388,15 @@ class GreenStorage(StorageBase):
       concurrency=self.concurrency,
       total=len(file_paths),
     )
-    
+
     return self
 
   def list_files(self, prefix="", flat=False):
     """
-    List the files in the layer with the given prefix. 
+    List the files in the layer with the given prefix.
 
     flat means only generate one level of a directory,
-    while non-flat means generate all file paths with that 
+    while non-flat means generate all file paths with that
     prefix.
 
     Here's how flat=True handles different senarios:
@@ -408,7 +408,7 @@ class GreenStorage(StorageBase):
         - Lists the 'bigarray' directory
       4. partial file name prefix = 'bigarray/chunk_'
         - Lists the 'bigarray/' directory and filters on 'chunk_'
-    
+
     Return: generated sequence of file paths relative to layer_path
     """
     with self.get_connection() as conn:
@@ -427,7 +427,7 @@ class GreenStorage(StorageBase):
 
 class ThreadedStorage(StorageBase, ThreadedQueue):
   """
-  Access files stored in Google Storage (gs), Amazon S3 (s3), 
+  Access files stored in Google Storage (gs), Amazon S3 (s3),
   or the local Filesystem (file).
 
   e.g. with Storage('gs://bucket/dataset/layer') as stor:
@@ -440,7 +440,7 @@ class ThreadedStorage(StorageBase, ThreadedQueue):
   Optional:
     n_threads (int:20): number of threads to use downloading and uplaoding.
       If 0, execution will be on the main python thread.
-    progress (bool:false): Show a tqdm progress bar for multiple 
+    progress (bool:false): Show a tqdm progress bar for multiple
       uploads and downloads.
   """
   def __init__(self, layer_path, n_threads=20, progress=False):
@@ -469,18 +469,18 @@ class ThreadedStorage(StorageBase, ThreadedQueue):
     if type(content) != str:
       content = jsonify(content)
     return self.put_file(file_path, content, content_type=content_type, *args, **kwargs)
-  
+
   def put_file(self, file_path, content, content_type=None, compress=None, compress_level=None, cache_control=None):
-    """ 
+    """
     Args:
       filename (string): it can contains folders
       content (string): binary data to save
     """
-    return self.put_files([ (file_path, content) ], 
-      content_type=content_type, 
-      compress=compress, 
+    return self.put_files([ (file_path, content) ],
+      content_type=content_type,
+      compress=compress,
       compress_level=compress_level,
-      cache_control=cache_control, 
+      cache_control=cache_control,
       block=False
     )
 
@@ -555,16 +555,16 @@ class ThreadedStorage(StorageBase, ThreadedQueue):
     results = []
 
     def get_file_thunk(path, interface):
-      result = error = None 
+      result = error = None
 
       try:
         result = interface.get_file(path)
       except Exception as err:
         error = err
-        # important to print immediately because 
+        # important to print immediately because
         # errors are collected at the end
-        print(err) 
-      
+        print(err)
+
       content, encoding = result
       content = compression.decompress(content, encoding)
 
@@ -615,10 +615,10 @@ class ThreadedStorage(StorageBase, ThreadedQueue):
 
   def list_files(self, prefix="", flat=False):
     """
-    List the files in the layer with the given prefix. 
+    List the files in the layer with the given prefix.
 
     flat means only generate one level of a directory,
-    while non-flat means generate all file paths with that 
+    while non-flat means generate all file paths with that
     prefix.
 
     Here's how flat=True handles different senarios:
@@ -630,7 +630,7 @@ class ThreadedStorage(StorageBase, ThreadedQueue):
         - Lists the 'bigarray' directory
       4. partial file name prefix = 'bigarray/chunk_'
         - Lists the 'bigarray/' directory and filters on 'chunk_'
-    
+
     Return: generated sequence of file paths relative to layer_path
     """
 
@@ -644,5 +644,3 @@ class ThreadedStorage(StorageBase, ThreadedQueue):
   def __exit__(self, exception_type, exception_value, traceback):
     ThreadedQueue.__exit__(self, exception_type, exception_value, traceback)
     self._interface.release_connection()
-
-

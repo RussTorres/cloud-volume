@@ -3,7 +3,7 @@ import threading
 import time
 from functools import partial
 
-import boto3 
+import boto3
 from google.cloud.storage import Client
 import tenacity
 
@@ -11,26 +11,26 @@ from .secrets import google_credentials, aws_credentials
 from .exceptions import UnsupportedProtocolError
 
 retry = tenacity.retry(
-  reraise=True, 
-  stop=tenacity.stop_after_attempt(7), 
+  reraise=True,
+  stop=tenacity.stop_after_attempt(7),
   wait=tenacity.wait_random_exponential(0.5, 60.0),
 )
 
 class ConnectionPool(object):
   """
   This class is intended to be subclassed. See below.
-  
+
   Creating fresh client or connection objects
   for Google or Amazon eventually starts causing
   breakdowns when too many connections open.
-  
+
   To promote efficient resource use and prevent
   containers from dying, we create a ConnectionPool
   that allows for the reuse of connections.
-  
-  Storage interfaces may acquire and release connections 
-  when they need or finish using them. 
-  
+
+  Storage interfaces may acquire and release connections
+  when they need or finish using them.
+
   If the limit is reached, additional requests for
   acquiring connections will block until they can
   be serviced.
@@ -46,9 +46,9 @@ class ConnectionPool(object):
   def _create_connection(self):
     raise NotImplementedError
 
-  def get_connection(self):    
+  def get_connection(self):
     with self._lock:
-      try:        
+      try:
         conn = self.pool.get(block=False)
         self.pool.task_done()
       except Queue.Empty:
@@ -67,7 +67,7 @@ class ConnectionPool(object):
       self.outstanding -= 1
 
   def close(self, conn):
-    return 
+    return
 
   def reset_pool(self):
     while True:
@@ -109,9 +109,17 @@ class S3ConnectionPool(ConnectionPool):
         aws_secret_access_key=self.credentials['AWS_SECRET_ACCESS_KEY'],
         endpoint_url='https://s3-hpcrc.rc.princeton.edu',
       )
+    elif self.service == 'aicephs3':
+      return boto3.client(
+        's3',
+        aws_access_key_id=self.credentials['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=self.credentials['AWS_SECRET_ACCESS_KEY'],
+        endpoint_url='http://aidc-ceph1-prd.corp.alleninstitute.org:8000',
+        region_name='us-east-1'
+      )
     else:
       raise UnsupportedProtocolError("{} unknown. Choose from 's3' or 'matrix'.", self.service)
-      
+
   def close(self, conn):
     try:
       return conn.close()

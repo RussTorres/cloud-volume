@@ -7,16 +7,16 @@ import sys
 from .exceptions import UnsupportedProtocolError
 from .lib import yellow, toabs
 
-ExtractedPath = namedtuple('ExtractedPath', 
+ExtractedPath = namedtuple('ExtractedPath',
   ('format', 'protocol', 'bucket', 'basepath', 'no_bucket_basepath', 'dataset', 'layer')
 )
 
-ALLOWED_PROTOCOLS = [ 'gs', 'file', 's3', 'matrix', 'http', 'https' ]
-ALLOWED_FORMATS = [ 'graphene', 'precomputed', 'boss' ] 
+ALLOWED_PROTOCOLS = [ 'gs', 'file', 's3', 'matrix', 'aicephs3', 'http', 'https' ]
+ALLOWED_FORMATS = [ 'graphene', 'precomputed', 'boss' ]
 
 CLOUDPATH_ERROR = yellow("""
 Cloud Path must conform to FORMAT://PROTOCOL://BUCKET/PATH
-Examples: 
+Examples:
   precomputed://gs://test_bucket/em
   gs://test_bucket/em
   graphene://https://example.com/image/em
@@ -31,7 +31,7 @@ Cloud Path Recieved: {}
 
 def ascloudpath(epath):
   return "{}://{}://{}".format(
-    epath.format, epath.protocol, 
+    epath.format, epath.protocol,
     posixpath.join(epath.basepath, epath.dataset, epath.layer)
   )
 
@@ -50,9 +50,9 @@ def pop_protocol(cloudpath):
 
 def extract_format_protocol(cloudpath):
   error = UnsupportedProtocolError(CLOUDPATH_ERROR.format(cloudpath))
-  
+
   (proto, cloudpath) = pop_protocol(cloudpath)
-  
+
   if proto is None:
     raise error # e.g. ://test_bucket, test_bucket, wow//test_bucket
 
@@ -60,7 +60,7 @@ def extract_format_protocol(cloudpath):
 
   if proto in ALLOWED_PROTOCOLS:
     fmt = 'precomputed'
-    protocol = proto 
+    protocol = proto
   elif proto in ALLOWED_FORMATS:
     fmt = proto
 
@@ -72,7 +72,7 @@ def extract_format_protocol(cloudpath):
     if protocol is None:
       protocol = proto
     else:
-      raise error # e.g. gs://gs:// 
+      raise error # e.g. gs://gs://
 
   (proto, cloudpath) = pop_protocol(cloudpath)
   if proto is not None:
@@ -82,7 +82,7 @@ def extract_format_protocol(cloudpath):
 
 def strict_extract(cloudpath, windows=None, disable_toabs=False):
   """
-  Same as cloudvolume.paths.extract, but raise an additional 
+  Same as cloudvolume.paths.extract, but raise an additional
   cloudvolume.exceptions.UnsupportedProtocolError
   if either dataset or layer is not set.
 
@@ -97,7 +97,7 @@ def strict_extract(cloudpath, windows=None, disable_toabs=False):
 
 def extract(cloudpath, windows=None, disable_toabs=False):
   """
-  Given a valid cloudpath of the form 
+  Given a valid cloudpath of the form
   format://protocol://bucket/.../dataset/layer
 
   Where format in: None, precomputed, boss, graphene
@@ -119,7 +119,7 @@ def extract(cloudpath, windows=None, disable_toabs=False):
 
   windows_file_re = re.compile(r'((?:\w:\\)[\d\w_\.\-]+(?:\\)?)') # for C:\what\a\great\path
   bucket_re = re.compile(r'^(/?[~\d\w_\.\-]+(?::\d+)?)/') # posix /what/a/great/path
-  
+
   error = UnsupportedProtocolError(CLOUDPATH_ERROR.format(cloudpath))
 
   if windows is None:
@@ -128,10 +128,10 @@ def extract(cloudpath, windows=None, disable_toabs=False):
   if disable_toabs:
     abspath = lambda x: x # can't prepend linux paths when force testing windows
   else:
-    abspath = toabs    
+    abspath = toabs
 
   fmt, protocol, cloudpath = extract_format_protocol(cloudpath)
-  
+
   split_char = '/'
   if protocol == 'file':
     cloudpath = abspath(cloudpath)
@@ -145,7 +145,7 @@ def extract(cloudpath, windows=None, disable_toabs=False):
 
   (bucket,) = match.groups()
 
-  splitcloudpath = cloudpath 
+  splitcloudpath = cloudpath
   if splitcloudpath[0] == split_char:
     splitcloudpath = splitcloudpath[1:]
   if splitcloudpath[-1] == split_char:
@@ -165,8 +165,8 @@ def extract(cloudpath, windows=None, disable_toabs=False):
     basepath = split_char.join([bucket] + splitties[1:-1])
 
   return ExtractedPath(
-    fmt, protocol, bucket, 
-    basepath, no_bucket_basepath, 
+    fmt, protocol, bucket,
+    basepath, no_bucket_basepath,
     dataset, layer
   )
 
